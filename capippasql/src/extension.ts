@@ -44,25 +44,25 @@ function capitalizeKeywords() {
 
 // Function to apply capitalization to everything except variables
 function applyCapitalizationAll(text: string): string {
-    // Find and remove comments from the text so they are not affected
-    const { codeWithoutComments, comments } = extractComments(text);
+    // Extract comments and strings from the text so they are not affected
+    const { codeWithoutCommentsAndStrings, comments, strings } = extractCommentsAndStrings(text);
 
     // Find variables inside procedures, functions, or packages
-    const variableRegex = /\b(\w+)\b(?=\s+VARCHAR2|\s+NUMBER|\s+INTEGER|\s+BOOLEAN|\s+DATE|\s+TIMESTAMP|\s+CHAR)/gi;
+    const VARIABLE_REGEX = /\b(\w+)\b(?=\s+(VARCHAR2|NUMBER|INTEGER|BOOLEAN|DATE|TIMESTAMP|CHAR|PLS_INTEGER|CLOB|BLOB|BINARY_FLOAT|BINARY_DOUBLE|RAW|NVARCHAR2|NCHAR|NCLOB))\b/gi;
     const variables = new Set<string>();
     let match: RegExpExecArray | null;
 
-    while ((match = variableRegex.exec(codeWithoutComments)) !== null) {
+    while ((match = VARIABLE_REGEX.exec(codeWithoutCommentsAndStrings)) !== null) {
         variables.add(match[1]);
     }
 
     // Capitalize everything except variables
-    const capitalizedCode = codeWithoutComments.replace(/\b\w+\b/g, (word) => {
+    const capitalizedCode = codeWithoutCommentsAndStrings.replace(/\b\w+\b/g, (word) => {
         return variables.has(word) ? word : word.toUpperCase();
     });
 
-    // Restore the comments to their original positions
-    return restoreComments(capitalizedCode, comments);
+    // Restore the strings and comments to their original positions
+    return restoreCommentsAndStrings(capitalizedCode, comments, strings);
 }
 
 // Function to apply capitalization only to predefined keywords
@@ -70,48 +70,71 @@ function applyCapitalization(text: string, keywords: string[]): string {
     // Normalize keywords to uppercase
     const uppercaseKeywords = keywords.map(keyword => keyword.toUpperCase());
 
-    // Extract comments so they are not affected
-    const { codeWithoutComments, comments } = extractComments(text);
+    // Extract comments and strings so they are not affected
+    const { codeWithoutCommentsAndStrings, comments, strings } = extractCommentsAndStrings(text);
 
     // Find variables inside procedures, functions, or packages
-    const variableRegex = /\b(\w+)\b(?=\s+VARCHAR2|\s+NUMBER|\s+INTEGER|\s+BOOLEAN|\s+DATE|\s+TIMESTAMP|\s+CHAR)/gi;
+    const VARIABLE_REGEX = /\b(\w+)\b(?=\s+(VARCHAR2|NUMBER|INTEGER|BOOLEAN|DATE|TIMESTAMP|CHAR|PLS_INTEGER|CLOB|BLOB|BINARY_FLOAT|BINARY_DOUBLE|RAW|NVARCHAR2|NCHAR|NCLOB))\b/gi;
     const variables = new Set<string>();
     let match: RegExpExecArray | null;
 
-    while ((match = variableRegex.exec(codeWithoutComments)) !== null) {
+    while ((match = VARIABLE_REGEX.exec(codeWithoutCommentsAndStrings)) !== null) {
         variables.add(match[1]);
     }
 
     // Apply capitalization to keywords
-    const keywordRegex = new RegExp(`\\b(${uppercaseKeywords.join('|')})\\b`, 'gi');
-    const capitalizedCode = codeWithoutComments.replace(keywordRegex, (match) => {
-        return match.toUpperCase();
+    const KEYWORD_REGEX = new RegExp(`\\b(${uppercaseKeywords.join('|')})\\b`, 'gi');
+    const capitalizedCode = codeWithoutCommentsAndStrings.replace(KEYWORD_REGEX, (match) => {
+        return variables.has(match.toLowerCase()) ? match : match.toUpperCase();
     });
 
-    // Restore the comments to their original positions
-    return restoreComments(capitalizedCode, comments);
+    // Restore the strings and comments to their original positions
+    return restoreCommentsAndStrings(capitalizedCode, comments, strings);
 }
 
-// Extract comments from the code and return the code without comments
-function extractComments(text: string): { codeWithoutComments: string, comments: { position: number, comment: string }[] } {
-    const commentRegex = /(--.*?$|\/\*[\s\S]*?\*\/)/gm;
+// Extract comments and strings from the code and return the code without comments or strings
+function extractCommentsAndStrings(text: string): { codeWithoutCommentsAndStrings: string, comments: { position: number, comment: string }[], strings: { position: number, str: string }[] } {
+    const COMMENT_REGEX = /(--.*?$|\/\*[\s\S]*?\*\/)/gm;
+    const STRING_REGEX = /(['"])(?:(?=(\\?))\2.)*?\1/g;
+
     const comments: { position: number, comment: string }[] = [];
-    let codeWithoutComments = text;
+    const strings: { position: number, str: string }[] = [];
+    let codeWithoutCommentsAndStrings = text;
 
     let match: RegExpExecArray | null;
-    while ((match = commentRegex.exec(text)) !== null) {
+
+    // Extract comments
+    while ((match = COMMENT_REGEX.exec(text)) !== null) {
         comments.push({ position: match.index, comment: match[0] });
-        codeWithoutComments = codeWithoutComments.replace(match[0], ' '.repeat(match[0].length));
+        codeWithoutCommentsAndStrings = replaceWithSpacesKeepingNewlines(codeWithoutCommentsAndStrings, match.index, match[0]);
     }
 
-    return { codeWithoutComments, comments };
+    // Extract strings
+    while ((match = STRING_REGEX.exec(text)) !== null) {
+        strings.push({ position: match.index, str: match[0] });
+        codeWithoutCommentsAndStrings = replaceWithSpacesKeepingNewlines(codeWithoutCommentsAndStrings, match.index, match[0]);
+    }
+
+    return { codeWithoutCommentsAndStrings, comments, strings };
 }
 
-// Restore the comments into their original positions
-function restoreComments(code: string, comments: { position: number, comment: string }[]): string {
+// Replace a section with spaces but preserve line breaks
+function replaceWithSpacesKeepingNewlines(text: string, startIndex: number, match: string): string {
+    const SPACES = match.replace(/[^\r\n]/g, ' ');
+    return text.slice(0, startIndex) + SPACES + text.slice(startIndex + match.length);
+}
+
+// Restore the comments and strings into their original positions
+function restoreCommentsAndStrings(code: string, comments: { position: number, comment: string }[], strings: { position: number, str: string }[]): string {
     let restoredCode = code;
+
     comments.reverse().forEach(comment => {
-        restoredCode = restoredCode.slice(0, comment.position) + comment.comment + restoredCode.slice(comment.position);
+        restoredCode = restoredCode.slice(0, comment.position) + comment.comment + restoredCode.slice(comment.position + comment.comment.length);
     });
+
+    strings.reverse().forEach(str => {
+        restoredCode = restoredCode.slice(0, str.position) + str.str + restoredCode.slice(str.position + str.str.length);
+    });
+
     return restoredCode;
 }
