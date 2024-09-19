@@ -1,23 +1,56 @@
-# Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode
-# Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode
+# Node modules directory
+/node_modules/
 
-### VisualStudioCode ###
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
+# Output directories
+/out/
+*.js
 
-# Local History for Visual Studio Code
-.history/
+# TypeScript build output
+*.tsbuildinfo
 
-# Built Visual Studio Code Extensions
-*.vsix
+# VSCode settings folder
+.vscode/
 
-### VisualStudioCode Patch ###
-# Ignore all local history of files
-.history
-.ionide
+# Logs
+*.log
 
-# End of https://www.toptal.com/developers/gitignore/api/visualstudiocode
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# NPM package lock file (if you want to exclude it)
+package-lock.json
+
+# Dependency directories
+bower_components/
+jspm_packages/
+
+# Temporary files
+*.tmp
+*.swp
+
+# Environment files
+.env
+
+# Debug and test artifacts
+*.code-workspace
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# ESBuild and related files
+esbuild.js
+
+# Miscellaneous
+*.sublime-workspace
+*.sublime-project
+
+# Visual Studio Code extensions directory (for global extensions)
+.vscode/extensions/
+
+# Synchronized files (if using extensions like Live Share)
+.vscode/liveshare/
+
+# Coverage directory (if using code coverage tools)
+coverage/
