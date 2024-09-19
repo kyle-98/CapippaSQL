@@ -1,17 +1,18 @@
 import * as vscode from 'vscode';
 
-// Activate function
+// Activate function is called when the extension is activated
 export function activate(context: vscode.ExtensionContext) {
     let capitalizeCommand = vscode.commands.registerCommand('capippasql.capippalizeKeywords', () => {
         capitalizeKeywords();
     });
 
+    // Add the command to the context subscriptions
     context.subscriptions.push(capitalizeCommand);
 }
 
 export function deactivate() {}
 
-// Function to capitalize SQL keywords
+// Function to capitalize SQL keywords or everything except variables, depending on configuration
 function capitalizeKeywords() {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -21,83 +22,96 @@ function capitalizeKeywords() {
 
     const document = editor.document;
     const text = document.getText();
+    
+    // Get configuration settings
+    const keywords = vscode.workspace.getConfiguration('capippasql').get<string[]>('keywords') || [];
+    const capitalizeAll = vscode.workspace.getConfiguration('capippasql').get<boolean>('capitalizeEverythingExceptVariables') || false;
 
-    const config = vscode.workspace.getConfiguration('capippasql');
-    const keywords = config.get<string[]>('keywords') || [];
-    const ignoreVariables = config.get<boolean>('capitalizeEverythingExceptVariables') || false;
+    // Apply capitalization, handling whether we capitalize everything or just keywords
+    const capitalizedText = capitalizeAll 
+        ? applyCapitalizationAll(text) 
+        : applyCapitalization(text, keywords);
 
-    // Extract the variables declared in the procedure/function
-    const variables = ignoreVariables ? extractVariables(text) : [];
-
-    // Apply capitalization, skipping variables
-    const capitalizedText = ignoreVariables
-        ? capitalizeAllExceptVariables(text, keywords, variables)
-        : capitalizePredefinedKeywords(text, keywords);
-
+    // Replace the document text with capitalized text
     const edit = new vscode.WorkspaceEdit();
     const fullRange = new vscode.Range(
         document.positionAt(0),
         document.positionAt(text.length)
     );
     edit.replace(document.uri, fullRange, capitalizedText);
-    vscode.workspace.applyEdit(edit).then(success => {
-        if (success) {
-            vscode.window.showInformationMessage('SQL keywords capitalized successfully.');
-        } else {
-            vscode.window.showErrorMessage('Failed to capitalize SQL keywords.');
-        }
-    });
+    vscode.workspace.applyEdit(edit);
 }
 
-// Extract variables declared in PL/SQL
-function extractVariables(text: string): string[] {
-    // Regex to match variable declarations (basic, can be extended)
-    const variableRegex = /\b(\w+)\s+(VARCHAR2|NUMBER|DATE|CHAR|FLOAT|BOOLEAN|INTEGER|CLOB|BLOB|RAW|DATE|TIMESTAMP|INTERVAL|BOOLEAN|BINARY_FLOAT|BINARY_DOUBLE)\b/g;
-    const variables: string[] = [];
+// Function to apply capitalization to everything except variables
+function applyCapitalizationAll(text: string): string {
+    // Find and remove comments from the text so they are not affected
+    const { codeWithoutComments, comments } = extractComments(text);
 
-    let match;
-    while ((match = variableRegex.exec(text)) !== null) {
-        variables.push(match[1].toUpperCase());
+    // Find variables inside procedures, functions, or packages
+    const variableRegex = /\b(\w+)\b(?=\s+VARCHAR2|\s+NUMBER|\s+INTEGER|\s+BOOLEAN|\s+DATE|\s+TIMESTAMP|\s+CHAR)/gi;
+    const variables = new Set<string>();
+    let match: RegExpExecArray | null;
+
+    while ((match = variableRegex.exec(codeWithoutComments)) !== null) {
+        variables.add(match[1]);
     }
 
-    return variables;
-}
-
-// Function to capitalize all keywords except for variables
-function capitalizeAllExceptVariables(text: string, keywords: string[], variables: string[]): string {
-    // First, split the text into lines for processing
-    const lines = text.split(/\r?\n/);
-	vscode.window.showErrorMessage(variables.join(', '));
-
-    // Store capitalized lines
-    const capitalizedLines = lines.map(line => {
-        // Identify if the line is part of a SQL statement or a comment
-        // and apply different processing based on that
-        if (line.trim().startsWith("--")) {
-            // Skip comments
-            return line;
-        }
-
-        const capitalizedLine = line.replace(/\b(\w+)\b/g, (match) => {
-            const upperMatch = match.toUpperCase();
-			
-			vscode.window.showErrorMessage(variables.join(', '));
-            if (variables.includes(upperMatch)) {
-				vscode.window.showErrorMessage(match + " | " + upperMatch);
-                return match; // Skip variable
-            } else {
-				return upperMatch;
-			}
-            
-        });
-        return capitalizedLine;
+    // Capitalize everything except variables
+    const capitalizedCode = codeWithoutComments.replace(/\b\w+\b/g, (word) => {
+        return variables.has(word) ? word : word.toUpperCase();
     });
 
-    return capitalizedLines.join('\n');
+    // Restore the comments to their original positions
+    return restoreComments(capitalizedCode, comments);
 }
 
-// Function to capitalize predefined keywords only
-function capitalizePredefinedKeywords(text: string, keywords: string[]): string {
-    const keywordRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'gi');
-    return text.replace(keywordRegex, (match) => match.toUpperCase());
+// Function to apply capitalization only to predefined keywords
+function applyCapitalization(text: string, keywords: string[]): string {
+    // Normalize keywords to uppercase
+    const uppercaseKeywords = keywords.map(keyword => keyword.toUpperCase());
+
+    // Extract comments so they are not affected
+    const { codeWithoutComments, comments } = extractComments(text);
+
+    // Find variables inside procedures, functions, or packages
+    const variableRegex = /\b(\w+)\b(?=\s+VARCHAR2|\s+NUMBER|\s+INTEGER|\s+BOOLEAN|\s+DATE|\s+TIMESTAMP|\s+CHAR)/gi;
+    const variables = new Set<string>();
+    let match: RegExpExecArray | null;
+
+    while ((match = variableRegex.exec(codeWithoutComments)) !== null) {
+        variables.add(match[1]);
+    }
+
+    // Apply capitalization to keywords
+    const keywordRegex = new RegExp(`\\b(${uppercaseKeywords.join('|')})\\b`, 'gi');
+    const capitalizedCode = codeWithoutComments.replace(keywordRegex, (match) => {
+        return match.toUpperCase();
+    });
+
+    // Restore the comments to their original positions
+    return restoreComments(capitalizedCode, comments);
+}
+
+// Extract comments from the code and return the code without comments
+function extractComments(text: string): { codeWithoutComments: string, comments: { position: number, comment: string }[] } {
+    const commentRegex = /(--.*?$|\/\*[\s\S]*?\*\/)/gm;
+    const comments: { position: number, comment: string }[] = [];
+    let codeWithoutComments = text;
+
+    let match: RegExpExecArray | null;
+    while ((match = commentRegex.exec(text)) !== null) {
+        comments.push({ position: match.index, comment: match[0] });
+        codeWithoutComments = codeWithoutComments.replace(match[0], ' '.repeat(match[0].length));
+    }
+
+    return { codeWithoutComments, comments };
+}
+
+// Restore the comments into their original positions
+function restoreComments(code: string, comments: { position: number, comment: string }[]): string {
+    let restoredCode = code;
+    comments.reverse().forEach(comment => {
+        restoredCode = restoredCode.slice(0, comment.position) + comment.comment + restoredCode.slice(comment.position);
+    });
+    return restoredCode;
 }
