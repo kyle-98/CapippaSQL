@@ -2,7 +2,7 @@
   "name": "capippasql",
   "displayName": "CapippaSQL",
   "description": "Capitalize Oracle SQL Keywords/Script Data",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.60.0"
   },
